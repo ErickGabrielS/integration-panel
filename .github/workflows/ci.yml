@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test --configuration Release
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/IntegrationPanel.Web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: src/IntegrationPanel.Web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t integration-panel .
+      - name: Smoke test
+        run: |
+          docker run -d --name panel -p 8080:8080 \
+            -e Jwt__Key=chave-do-ci-com-mais-de-32-caracteres!! \
+            -e Demo__Seed=true \
+            -e Demo__Users__0__UserName=leitor -e Demo__Users__0__DisplayName=Leitor \
+            -e Demo__Users__0__Role=Viewer -e Demo__Users__0__Password=demo-leitor \
+            integration-panel
+          for i in $(seq 1 30); do curl -sf localhost:8080/api/health && break; sleep 1; done
+          curl -sf localhost:8080/ | grep -q "Painel de Integra"
+          TOKEN=$(curl -sf -X POST localhost:8080/api/auth/login -H 'Content-Type: application/json' \
+            -d '{"userName":"leitor","password":"demo-leitor"}' | jq -r .token)
+          curl -sf -X POST localhost:8080/api/assistant/ask -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' -d '{"question":"Quais status estão sem de-para?"}' | tee /dev/stderr | grep -q EM_ANALISE

@@ -1,0 +1,10 @@
+bin/
+obj/
+*.db
+*.db-shm
+*.db-wal
+node_modules/
+src/IntegrationPanel.Api/wwwroot/
+.vs/
+*.user
+*.tsbuildinfo
